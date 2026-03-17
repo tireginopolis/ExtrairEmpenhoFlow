@@ -75,7 +75,7 @@
 
             if (
                 texto.toUpperCase().includes("NOTA EMPENHO") ||
-                texto.toUpperCase().includes("NOTA LIQUIDAÇÃO")
+                texto.toUpperCase().includes("NOTA DE LIQUIDAÇÃO")
             ) {
                 return true;
             }
@@ -86,34 +86,40 @@
 
     async function cortarPDF(arrayBuffer) {
 
-    const pdf = await PDFLib.PDFDocument.load(arrayBuffer);
-    const novo = await PDFLib.PDFDocument.create();
+        const pdf = await PDFLib.PDFDocument.load(arrayBuffer);
+        const novo = await PDFLib.PDFDocument.create();
 
-    // 👉 pega só a primeira página
-    const pagina = pdf.getPages()[0];
+        const pagina = pdf.getPages()[0];
+        const { width, height } = pagina.getSize();
 
-    const { width, height } = pagina.getSize();
+        const marginLeft = 50;
+        const marginRight = 25;
 
-    // 👉 embed só da metade superior
-    const embeddedPage = await novo.embedPage(pagina, {
-        left: 50,
-        right: width-50,
-        bottom: height / 2,
-        top: height
-    });
+        // 👉 dimensões reais do recorte
+        const cropWidth = width - marginLeft - marginRight;
+        const cropHeight = height / 2;
 
-    // 👉 cria página já no tamanho correto (meio A4)
-    const novaPagina = novo.addPage([width, height / 2]);
+        // 👉 recorte correto (assimétrico)
+        const embeddedPage = await novo.embedPage(pagina, {
+            left: marginLeft,
+            right: width - marginRight,
+            bottom: height / 2,
+            top: height
+        });
 
-    novaPagina.drawPage(embeddedPage, {
-        x: 0,
-        y: 0,
-        width: width,
-        height: height / 2
-    });
+        // 👉 página com tamanho exato do recorte
+        const novaPagina = novo.addPage([cropWidth, cropHeight]);
 
-    return await novo.save();
-}
+        // 👉 desenha sem distorção
+        novaPagina.drawPage(embeddedPage, {
+            x: 0,
+            y: 0,
+            width: cropWidth,
+            height: cropHeight
+        });
+
+        return await novo.save();
+    }
 
     async function executarChamada() {
 
