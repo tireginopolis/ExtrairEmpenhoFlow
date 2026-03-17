@@ -4,8 +4,8 @@
     await import("https://unpkg.com/pdf-lib/dist/pdf-lib.min.js");
 
     pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-  
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
     let bearerToken = null;
     let jaExecutou = false;
 
@@ -59,7 +59,13 @@
     }
 
     async function pdfContemEmpenho(arrayBuffer) {
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+        // 🔥 CLONA o buffer
+        const bufferClone = arrayBuffer.slice(0);
+
+        const pdf = await pdfjsLib.getDocument({
+            data: bufferClone
+        }).promise;
 
         for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
@@ -69,7 +75,7 @@
 
             if (
                 texto.toUpperCase().includes("NOTA EMPENHO") ||
-                texto.toUpperCase().includes("NOTA DE EMPENHO")
+                texto.toUpperCase().includes("NOTA LIQUIDAÇÃO")
             ) {
                 return true;
             }
@@ -79,33 +85,35 @@
     }
 
     async function cortarPDF(arrayBuffer) {
-        const pdf = await PDFLib.PDFDocument.load(arrayBuffer);
-        const novo = await PDFLib.PDFDocument.create();
 
-        const pages = await novo.copyPages(pdf, pdf.getPageIndices());
+    const pdf = await PDFLib.PDFDocument.load(arrayBuffer);
+    const novo = await PDFLib.PDFDocument.create();
 
-        pages.forEach((page) => {
-            const { width, height } = page.getSize();
+    // 👉 pega só a primeira página
+    const pagina = pdf.getPages()[0];
 
-            const top = novo.addPage([width, height / 2]);
-            top.drawPage(page, {
-                x: 0,
-                y: 0,
-                width,
-                height: height / 2
-            });
+    const { width, height } = pagina.getSize();
 
-            const bottom = novo.addPage([width, height / 2]);
-            bottom.drawPage(page, {
-                x: 0,
-                y: -height / 2,
-                width,
-                height
-            });
-        });
+    // 👉 embed só da metade superior
+    const embeddedPage = await novo.embedPage(pagina, {
+        left: 50,
+        right: width-50,
+        bottom: height / 2,
+        top: height
+    });
 
-        return await novo.save();
-    }
+    // 👉 cria página já no tamanho correto (meio A4)
+    const novaPagina = novo.addPage([width, height / 2]);
+
+    novaPagina.drawPage(embeddedPage, {
+        x: 0,
+        y: 0,
+        width: width,
+        height: height / 2
+    });
+
+    return await novo.save();
+}
 
     async function executarChamada() {
 
@@ -159,12 +167,14 @@
 
                     processosComEmpenho.add(id_fxo);
 
-                    const cortado = await cortarPDF(buffer);
+                    const bufferParaCorte = buffer.slice(0);
+                    const cortado = await cortarPDF(bufferParaCorte);
 
                     const pdfTmp = await PDFLib.PDFDocument.load(cortado);
                     const pages = await pdfFinal.copyPages(pdfTmp, pdfTmp.getPageIndices());
 
                     pages.forEach(p => pdfFinal.addPage(p));
+                    break;
                 }
             }
         }
