@@ -1,5 +1,11 @@
-(function () {
+(async function () {
 
+    await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js");
+    await import("https://unpkg.com/pdf-lib/dist/pdf-lib.min.js");
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  
     let bearerToken = null;
     let jaExecutou = false;
 
@@ -37,7 +43,6 @@
 
             if (auth) {
                 bearerToken = auth;
-                console.log("🔑 Token capturado (fetch):", bearerToken);
                 executarChamada();
             }
         }
@@ -45,93 +50,153 @@
         return originalFetch.apply(this, args);
     };
 
-    // 📡 Função principal
-    async function executarChamada() {
-        const folderId = getFolderId();
+    async function baixarPDF(id) {
+        const resp = await fetch(`/server/api/files/arquivos/${id}/download`, {
+            headers: { Authorization: bearerToken }
+        });
 
+        return await resp.arrayBuffer();
+    }
+
+    async function pdfContemEmpenho(arrayBuffer) {
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+
+            const texto = content.items.map(i => i.str).join(" ");
+
+            if (
+                texto.toUpperCase().includes("NOTA EMPENHO") ||
+                texto.toUpperCase().includes("NOTA DE EMPENHO")
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    async function cortarPDF(arrayBuffer) {
+        const pdf = await PDFLib.PDFDocument.load(arrayBuffer);
+        const novo = await PDFLib.PDFDocument.create();
+
+        const pages = await novo.copyPages(pdf, pdf.getPageIndices());
+
+        pages.forEach((page) => {
+            const { width, height } = page.getSize();
+
+            const top = novo.addPage([width, height / 2]);
+            top.drawPage(page, {
+                x: 0,
+                y: 0,
+                width,
+                height: height / 2
+            });
+
+            const bottom = novo.addPage([width, height / 2]);
+            bottom.drawPage(page, {
+                x: 0,
+                y: -height / 2,
+                width,
+                height
+            });
+        });
+
+        return await novo.save();
+    }
+
+    async function executarChamada() {
+
+        const folderId = getFolderId();
         if (!bearerToken || jaExecutou || !folderId) return;
 
         jaExecutou = true;
 
-        try {
-            const url = `/server/api/fluxo/inbox/${folderId}?sort=datamovimento_cai,desc`;
+        const pdfFinal = await PDFLib.PDFDocument.create();
+        const processosComEmpenho = new Set();
 
-            console.log("📡 Buscando fluxos:", url);
+        const url = `/server/api/fluxo/inbox/${folderId}?sort=datamovimento_cai,desc`;
 
-            const response = await fetch(url, {
-                headers: {
-                    "Authorization": bearerToken
-                }
+        const response = await fetch(url, {
+            headers: { Authorization: bearerToken }
+        });
+
+        const data = await response.json();
+        const lista = data.data || data.results || data;
+
+        for (const item of lista) {
+
+            const id_fxo = item.id_fxo;
+            if (!id_fxo) continue;
+
+            const urlTramites = `/server/api/fluxo/inbox/${folderId}/fluxos/${id_fxo}/tramites?limit=20&offset=0`;
+
+            const resp = await fetch(urlTramites, {
+                headers: { Authorization: bearerToken }
             });
 
-            const data = await response.json();
+            const dataTramites = await resp.json();
+            const listaTramites = dataTramites.data || dataTramites.results || dataTramites;
 
-            console.log("📦 Fluxos encontrados:", data);
+            const arquivos = buscarPDFs(listaTramites);
 
-            // 🔁 Para cada fluxo
-            const lista = Array.isArray(data) ? data : (data.data || data.results || []);
+            for (const arq of arquivos) {
 
-            for (const item of lista) {
+                // 🚫 já tem empenho nesse processo
+                if (processosComEmpenho.has(id_fxo)) break;
 
-                const id_fxo = item.id_fxo;
+                console.log("⬇️ Baixando:", arq.id_arq_fta);
 
-                if (!id_fxo) continue;
+                const buffer = await baixarPDF(arq.id_arq_fta);
 
-                const urlTramites = `/server/api/fluxo/inbox/${folderId}/fluxos/${id_fxo}/tramites?limit=20&offset=0&sort=num_ftr,desc`;
+                const ehEmpenho = await pdfContemEmpenho(buffer);
 
-                console.log("➡️ Buscando trâmites:", urlTramites);
+                if (ehEmpenho) {
 
-                const respTramites = await fetch(urlTramites, {
-                    headers: {
-                        "Authorization": bearerToken
-                    }
-                });
+                    console.log("💰 NOTA EMPENHO encontrada:", id_fxo);
 
-                const data1 = await respTramites.json();
+                    processosComEmpenho.add(id_fxo);
 
-                // 🔍 Percorre trâmites
-                const listaTramites = Array.isArray(data1) ? data1 : (data1.data || data1.results || []);
+                    const cortado = await cortarPDF(buffer);
 
-                const resultados = buscarPDFs(listaTramites, {
-                    id_fxo: id_fxo,
-                    numero_fxo: item.numero_fxo,
-                    ano_fxo: item.ano_fxo
-                });
+                    const pdfTmp = await PDFLib.PDFDocument.load(cortado);
+                    const pages = await pdfFinal.copyPages(pdfTmp, pdfTmp.getPageIndices());
 
-                for (const r of resultados) {
-                    console.log("📄 PDF encontrado:");
-                    console.log(r);
+                    pages.forEach(p => pdfFinal.addPage(p));
                 }
             }
-
-        } catch (e) {
-            console.error("❌ Erro:", e);
         }
+
+        const finalBytes = await pdfFinal.save();
+
+        const blob = new Blob([finalBytes], { type: "application/pdf" });
+        const urlBlob = URL.createObjectURL(blob);
+
+        window.open(urlBlob);
+
+        console.log("✅ PDF final gerado!");
     }
 
-    function buscarPDFs(obj, contexto = {}) {
+    function buscarPDFs(obj) {
         let resultados = [];
 
         if (Array.isArray(obj)) {
-            for (const item of obj) {
-                resultados = resultados.concat(buscarPDFs(item, contexto));
-            }
+            obj.forEach(i => resultados = resultados.concat(buscarPDFs(i)));
         } else if (obj && typeof obj === 'object') {
 
-            // 🧠 Verifica se esse objeto é um PDF válido
             if (
                 obj.arquivo_fta &&
                 obj.content_type_fta === "application/pdf"
             ) {
                 resultados.push({
-                    ...contexto,
                     id_arq_fta: obj.id_arq_fta
                 });
             }
 
-            // 🔁 Continua varrendo os filhos
-            for (const key in obj) {
-                resultados = resultados.concat(buscarPDFs(obj[key], contexto));
+            for (const k in obj) {
+                resultados = resultados.concat(buscarPDFs(obj[k]));
             }
         }
 
@@ -142,8 +207,3 @@
     setTimeout(executarChamada, 2000);
 
 })();
-
-Para cada PDF encontrado, faça a rotina de consulta pela chamada da API:
- /server/api/files/arquivos/${id_arq_fta}/download
-
- Em seguida incremente o código acima para agrupamento e recorte.
