@@ -84,7 +84,7 @@
         return false;
     }
 
-    async function cortarPDF(arrayBuffer) {
+    async function cortarPDF(arrayBuffer, numero, ano) {
 
         const pdf = await PDFLib.PDFDocument.load(arrayBuffer);
         const novo = await PDFLib.PDFDocument.create();
@@ -95,11 +95,9 @@
         const marginLeft = 50;
         const marginRight = 25;
 
-        // 👉 dimensões reais do recorte
         const cropWidth = width - marginLeft - marginRight;
         const cropHeight = height / 2;
 
-        // 👉 recorte correto (assimétrico)
         const embeddedPage = await novo.embedPage(pagina, {
             left: marginLeft,
             right: width - marginRight,
@@ -107,15 +105,51 @@
             top: height
         });
 
-        // 👉 página com tamanho exato do recorte
         const novaPagina = novo.addPage([cropWidth, cropHeight]);
 
-        // 👉 desenha sem distorção
         novaPagina.drawPage(embeddedPage, {
             x: 0,
             y: 0,
             width: cropWidth,
             height: cropHeight
+        });
+
+        // 🧾 TEXTO DO CARIMBO
+        const texto = `${numero}/${ano}`;
+
+        const font = await novo.embedFont(PDFLib.StandardFonts.HelveticaBold);
+
+        const fontSize = 12;
+        const textWidth = font.widthOfTextAtSize(texto, fontSize);
+        const textHeight = font.heightAtSize(fontSize);
+
+        const padding = 5;
+
+        const boxWidth = textWidth + padding * 2;
+        const boxHeight = textHeight + padding * 2;
+
+        // 📍 posição (canto superior direito)
+        const x = cropWidth - boxWidth - 5;
+        const y = cropHeight - boxHeight - 5;
+
+        // 🔲 desenha o quadrado
+        novaPagina.drawRectangle({
+            x,
+            y,
+            width: boxWidth,
+            height: boxHeight,
+            borderWidth: 1,
+            color: PDFLib.rgb(1, 1, 1), // fundo branco
+            borderColor: PDFLib.rgb(0, 0, 0)
+        });
+
+        // 🔤 desenha o texto
+        novaPagina.drawText(texto, {
+            x: x + padding,
+            y: y + padding,
+            size: fontSize,
+            font: font,
+            color: PDFLib.rgb(0, 0, 0)
         });
 
         return await novo.save();
@@ -154,7 +188,8 @@
             const dataTramites = await resp.json();
             const listaTramites = dataTramites.data || dataTramites.results || dataTramites;
 
-            const arquivos = buscarPDFs(listaTramites);
+            //const arquivos = buscarPDFs(listaTramites);
+            const arquivos = [...buscarPDFs(listaTramites)].reverse();
 
             for (const arq of arquivos) {
 
@@ -174,7 +209,10 @@
                     processosComEmpenho.add(id_fxo);
 
                     const bufferParaCorte = buffer.slice(0);
-                    const cortado = await cortarPDF(bufferParaCorte);
+                    const cortado = await cortarPDF(bufferParaCorte,
+                        item.numero_fxo,
+                        item.ano_fxo
+                    );
 
                     const pdfTmp = await PDFLib.PDFDocument.load(cortado);
                     const pages = await pdfFinal.copyPages(pdfTmp, pdfTmp.getPageIndices());

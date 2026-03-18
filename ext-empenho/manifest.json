@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Empenho PDF Automação Flowdocs",
+  "version": "1.0",
+  "description": "Processa PDFs de empenho automaticamente no flowdocs",
+  "permissions": [
+    "scripting",
+    "activeTab",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://reginopolis.flowdocs.com.br:2053/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://reginopolis.flowdocs.com.br:2053/admin/inbox/folder/*"],
+      "js": [
+        "libs/pdf.min.js",
+        "libs/pdf-lib.min.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["libs/pdf.worker.min.js", "interceptor.js"],
+      "matches": ["https://reginopolis.flowdocs.com.br:2053/*"]
+    }
+  ]
+}
