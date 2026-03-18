@@ -34,7 +34,7 @@ async function pdfContemEmpenho(arrayBuffer) {
         const content = await page.getTextContent();
         const texto = content.items.map((x) => x.str).join(" ").toUpperCase();
 
-        if (texto.includes("NOTA EMPENHO") || texto.includes("NOTA DE LIQUIDAÇÃO")) {
+        if (texto.includes("NOTA EMPENHO") || texto.includes("NOTA DE LIQUIDAÇÃO") || texto.includes("PARCELA P/ PAGAMENTO")) {
             return true;
         }
     }
@@ -49,8 +49,8 @@ async function cortarPDF(arrayBuffer, numero, ano) {
     const pagina = pdf.getPages()[0];
     const { width, height } = pagina.getSize();
 
-    const marginLeft = 50;
-    const marginRight = 25;
+    const marginLeft = 40;
+    const marginRight = 20;
     const cropWidth = width - marginLeft - marginRight;
     const cropHeight = height / 2;
 
