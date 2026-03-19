@@ -142,23 +142,23 @@ async function executarChamada() {
         if (!id_fxo) continue;
 
         const respTramites = await fetch(
-            `/server/api/fluxo/inbox/${folderId}/fluxos/${id_fxo}/tramites?limit=20&offset=0`,
+            `/server/api/fluxo/inbox/${folderId}/fluxos/${id_fxo}/tramites?limit=20&offset=0&sort=num_ftr,desc`,
             { headers: { Authorization: bearerToken } }
         );
         const dataTramites = await respTramites.json();
         const listaTramites = dataTramites.data || dataTramites.results || dataTramites;
 
-        const arquivos = [...buscarPDFs(listaTramites)].reverse();
+        const arquivos = buscarPDFs(listaTramites);
 
         for (const arq of arquivos) {
             if (processosComEmpenho.has(id_fxo)) break;
 
-            // console.log("⬇️ Baixando:", arq.id_arq_fta);
+            console.log("⬇️ Baixando:", arq.id_arq_fta);
             const buffer = await baixarPDF(arq.id_arq_fta);
             const ehEmpenho = await pdfContemEmpenho(buffer);
 
             if (ehEmpenho) {
-                // console.log("💰 Empenho encontrado — processo:", id_fxo);
+                console.log("💰 Empenho encontrado — processo:", id_fxo);
                 processosComEmpenho.add(id_fxo);
 
                 const cortado = await cortarPDF(buffer.slice(0), item.numero_fxo, item.ano_fxo);
