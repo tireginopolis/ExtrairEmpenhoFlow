@@ -1,12 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Empenho PDF Automação Flowdocs",
-  "version": "1.0",
-  "description": "Processa PDFs de empenho automaticamente no flowdocs",
+  "version": "2.0",
+  "description": "Módulo Tesouraria — Processa PDFs de empenho automaticamente no Flowdocs",
   "permissions": [
     "scripting",
     "activeTab",
-    "tabs"
+    "tabs",
+    "contextMenus",
+    "storage"
   ],
   "host_permissions": [
     "https://reginopolis.flowdocs.com.br:2053/*"
@@ -20,6 +22,7 @@
       "js": [
         "libs/pdf.min.js",
         "libs/pdf-lib.min.js",
+        "tesouraria.js",
         "content.js"
       ],
       "run_at": "document_idle"
@@ -27,7 +30,10 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["libs/pdf.worker.min.js", "interceptor.js"],
+      "resources": [
+        "libs/pdf.worker.min.js",
+        "interceptor.js"
+      ],
       "matches": ["https://reginopolis.flowdocs.com.br:2053/*"]
     }
   ]
