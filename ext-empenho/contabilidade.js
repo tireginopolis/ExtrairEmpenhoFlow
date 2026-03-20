@@ -16,7 +16,6 @@ class Contabilidade {
     // ──────────────────────────────────────────────────────────
     static INBOX_ID = 73;
     static INBOX_URL = `https://reginopolis.flowdocs.com.br:2053/server/api/fluxo/inbox/${Contabilidade.INBOX_ID}?limit=999`;
-    static MOVER_URL = `https://reginopolis.flowdocs.com.br:2053/server/api/fluxo/inbox/pastas/${Contabilidade.INBOX_ID}`;
     static REGEX_DATA = /\b\d{1,2}[\/\.]\d{1,2}[\/\.](\d{2}|\d{4})\b/g;
     static STORAGE_KEY = "contabilidade_ativo";
 
@@ -329,7 +328,7 @@ class Contabilidade {
         }
 
         // 4. Agrupa processos por id_pas (evita uma chamada PUT por processo)
-        //    Map<id_pas, id_fxo[]>
+        //    Map<id_pas, id_cai[]>
         const grupos = new Map();
         const semPasta = [];
 
@@ -342,16 +341,16 @@ class Contabilidade {
             const id_pas = this._resolverPasta(match[0]);
 
             if (!id_pas) {
-                semPasta.push({ id_fxo: item.id_fxo, titulo });
-                console.warn(`[Contabilidade] Sem pasta para "${match[0]}" (id_fxo=${item.id_fxo})`);
+                semPasta.push({ id_cai: item.id_cai, titulo });
+                console.warn(`[Contabilidade] Sem pasta para "${match[0]}" (id_cai=${item.id_cai})`);
                 continue;
             }
 
             if (!grupos.has(id_pas)) grupos.set(id_pas, []);
-            grupos.get(id_pas).push(item.id_fxo);
+            grupos.get(id_pas).push(item.id_cai);
         }
 
-        // 5. Envia um PUT por pasta, com todos os id_fxo do grupo
+        // 5. Envia um PUT por pasta, com todos os id_cai do grupo
         let pastaIdx = 0;
         const totalPastas = grupos.size;
 
@@ -361,10 +360,10 @@ class Contabilidade {
                 `Movendo processos… (${pastaIdx}/${totalPastas})`,
                 `Pasta ${id_pas} ← ${ids.length} processo(s)`
             );
-            // console.log(ids);
-            // console.log(token);
+
             try {
-                const resp = await fetch(Contabilidade.MOVER_URL, {
+                const url = `https://reginopolis.flowdocs.com.br:2053/server/api/fluxo/inbox/pastas/${id_pas}`;
+                const resp = await fetch(url, {
                     method: "PUT",
                     headers: {
                         Authorization: token,
@@ -377,6 +376,7 @@ class Contabilidade {
                     const corpo = await resp.text().catch(() => "");
                     throw new Error(`HTTP ${resp.status} ao mover para pasta ${id_pas}: ${corpo}`);
                 }
+
                 console.debug(`[Contabilidade] Pasta ${id_pas} ← ids [${ids.join(", ")}] movidos.`);
             } catch (err) {
                 console.error(`[Contabilidade] Erro ao mover para pasta ${id_pas}:`, err);
