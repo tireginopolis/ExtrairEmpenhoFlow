@@ -1,74 +1,105 @@
 // ══════════════════════════════════════════════════════════════
 //  background.js — Service Worker
 //  Responsabilidades:
-//    • Criar e gerenciar o menu de contexto (popup switch)
+//    • Criar e gerenciar menus de contexto (um por módulo)
 //    • Injetar interceptor.js no mundo MAIN quando necessário
-//    • Controlar estado ativo/inativo do módulo Tesouraria
+//    • Controlar estado ativo/inativo de cada módulo via storage
 // ══════════════════════════════════════════════════════════════
 
-const STORAGE_KEY = "tesouraria_ativo";
-const MENU_ID     = "toggle-tesouraria";
-const TARGET_URL  = "reginopolis.flowdocs.com.br:2053/admin/inbox/folder/";
+const TARGET_URL      = "reginopolis.flowdocs.com.br:2053/admin/inbox/folder/";
+const TARGET_URL_TABS = "https://reginopolis.flowdocs.com.br:2053/admin/inbox/folder/*";
 
 // ──────────────────────────────────────────────────────────────
-//  Estado inicial: lê do storage (padrão = false)
+//  Definição dos módulos gerenciados
 // ──────────────────────────────────────────────────────────────
-async function getModuloAtivo() {
-    const result = await chrome.storage.local.get(STORAGE_KEY);
-    return result[STORAGE_KEY] ?? false;
+const MODULOS = [
+    {
+        id:          "toggle-tesouraria",
+        storageKey:  "tesouraria_ativo",
+        msgType:     "TESOURARIA_TOGGLE",
+        labelAtivo:  "✅ Tesouraria: ATIVADO  (clique para desativar)",
+        labelInativo: "⬜ Tesouraria: DESATIVADO  (clique para ativar)",
+    },
+    {
+        id:          "toggle-contabilidade",
+        storageKey:  "contabilidade_ativo",
+        msgType:     "CONTABILIDADE_TOGGLE",
+        labelAtivo:  "✅ Contabilidade: ATIVADO  (clique para desativar)",
+        labelInativo: "⬜ Contabilidade: DESATIVADO  (clique para ativar)",
+    },
+];
+
+// ──────────────────────────────────────────────────────────────
+//  Helpers de storage
+// ──────────────────────────────────────────────────────────────
+async function getModuloAtivo(storageKey) {
+    const result = await chrome.storage.local.get(storageKey);
+    return result[storageKey] ?? false;
 }
 
-async function setModuloAtivo(valor) {
-    await chrome.storage.local.set({ [STORAGE_KEY]: valor });
+async function setModuloAtivo(storageKey, valor) {
+    await chrome.storage.local.set({ [storageKey]: valor });
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Menu de contexto — ícone da extensão
+//  Menu de contexto — clique direito no ícone da extensão
 // ──────────────────────────────────────────────────────────────
-async function criarMenu() {
-    chrome.contextMenus.removeAll(() => {
+async function criarMenus() {
+    chrome.contextMenus.removeAll(async () => {
+        // Separador visual de título (não clicável)
         chrome.contextMenus.create({
-            id: MENU_ID,
-            title: "Tesouraria: Carregando…",
+            id:       "header-modulos",
+            title:    "── Módulos ──",
             contexts: ["action"],
+            enabled:  false,
         });
+
+        for (const mod of MODULOS) {
+            chrome.contextMenus.create({
+                id:       mod.id,
+                title:    "Carregando…",
+                contexts: ["action"],
+            });
+        }
+
+        await atualizarTitulosMenus();
     });
-    await atualizarTituloMenu();
 }
 
-async function atualizarTituloMenu() {
-    const ativo = await getModuloAtivo();
-    chrome.contextMenus.update(MENU_ID, {
-        title: ativo
-            ? "✅ Tesouraria: ATIVADO  (clique para desativar)"
-            : "⬜ Tesouraria: DESATIVADO  (clique para ativar)",
-    });
+async function atualizarTitulosMenus() {
+    for (const mod of MODULOS) {
+        const ativo = await getModuloAtivo(mod.storageKey);
+        chrome.contextMenus.update(mod.id, {
+            title: ativo ? mod.labelAtivo : mod.labelInativo,
+        });
+    }
 }
 
 chrome.contextMenus.onClicked.addListener(async (info) => {
-    if (info.menuItemId !== MENU_ID) return;
+    const mod = MODULOS.find((m) => m.id === info.menuItemId);
+    if (!mod) return;
 
-    const atual = await getModuloAtivo();
+    const atual = await getModuloAtivo(mod.storageKey);
     const novo  = !atual;
-    await setModuloAtivo(novo);
-    await atualizarTituloMenu();
+    await setModuloAtivo(mod.storageKey, novo);
+    await atualizarTitulosMenus();
 
-    // Notifica todas as abas abertas do flowdocs sobre a mudança
-    const tabs = await chrome.tabs.query({ url: `*://${TARGET_URL}*` });
+    // Notifica todas as abas abertas do Flowdocs
+    const tabs = await chrome.tabs.query({ url: TARGET_URL_TABS });
     for (const tab of tabs) {
         try {
             await chrome.tabs.sendMessage(tab.id, {
-                type: "TESOURARIA_TOGGLE",
+                type: mod.msgType,
                 ativo: novo,
             });
         } catch (_) {
-            // Tab pode não ter o content script pronto ainda — ignorar
+            // Aba pode não ter o content script pronto — ignorar silenciosamente
         }
     }
 });
 
 // ──────────────────────────────────────────────────────────────
-//  Injeção do interceptor.js no mundo MAIN
+//  Injeção do interceptor.js (mundo MAIN) — só se algum módulo ativo
 // ──────────────────────────────────────────────────────────────
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (
@@ -76,8 +107,12 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         !tab.url?.includes(TARGET_URL)
     ) return;
 
-    const ativo = await getModuloAtivo();
-    if (!ativo) return;
+    // Injeta se qualquer módulo estiver ativo
+    const estados = await Promise.all(
+        MODULOS.map((m) => getModuloAtivo(m.storageKey))
+    );
+    const algumAtivo = estados.some(Boolean);
+    if (!algumAtivo) return;
 
     try {
         await chrome.scripting.executeScript({
@@ -86,12 +121,12 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
             world: "MAIN",
         });
     } catch (err) {
-        console.error("[Tesouraria] Erro ao injetar interceptor:", err);
+        console.error("[Background] Erro ao injetar interceptor:", err);
     }
 });
 
 // ──────────────────────────────────────────────────────────────
 //  Inicialização
 // ──────────────────────────────────────────────────────────────
-chrome.runtime.onInstalled.addListener(criarMenu);
-chrome.runtime.onStartup.addListener(criarMenu);
+chrome.runtime.onInstalled.addListener(criarMenus);
+chrome.runtime.onStartup.addListener(criarMenus);
