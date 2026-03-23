@@ -352,11 +352,7 @@ class EmpenhoConsulta {
 <strong>Recurso:</strong> ${item["VINCULO"] ?? ""}
 <strong>DADOS DO FORNECEDOR</strong>
 <strong>Nome:</strong> ${item["NOME"] ?? ""}
-<strong>CNPJ/CPF:</strong> ${item["INSMF"] ?? ""}
-<strong>Valor Empenhado:</strong> ${item["EMPENHADO"] ? Number(item["EMPENHADO"] || 0).toLocaleString('pt-BR', {
-            style: 'currency',
-            currency: 'BRL'
-        }) : ""}</p>
+<strong>CNPJ/CPF:</strong> ${item["INSMF"] ?? ""}</p>
         `.trim();
         // ══════════════════════════════════════════════════════
         //  ↑↑↑  FIM DA ESTRUTURA                             ↑↑↑
