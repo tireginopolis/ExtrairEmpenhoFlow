@@ -125,6 +125,20 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     }
 });
 
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg.type === "EMPENHO_FETCH") {
+        fetch(msg.url)
+            .then((r) => {
+                if (!r.ok) throw new Error(`HTTP ${r.status} — ${r.statusText}`);
+                return r.json();
+            })
+            .then((data) => sendResponse({ ok: true,  data }))
+            .catch((err) => sendResponse({ ok: false, error: err.message }));
+ 
+        return true; // mantém o canal aberto para resposta assíncrona
+    }
+});
+
 // ──────────────────────────────────────────────────────────────
 //  Inicialização
 // ──────────────────────────────────────────────────────────────

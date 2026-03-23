@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Empenho PDF Automação Flowdocs",
-  "version": "2.0",
-  "description": "Módulos Tesouraria e Contabilidade — automação de processos no Flowdocs",
+  "version": "2.1",
+  "description": "Módulos Tesouraria, Contabilidade e Consulta de Empenho — automação de processos no Flowdocs",
   "permissions": [
     "scripting",
     "activeTab",
@@ -11,7 +11,8 @@
     "storage"
   ],
   "host_permissions": [
-    "https://reginopolis.flowdocs.com.br:2053/*"
+    "https://reginopolis.flowdocs.com.br:2053/*",
+    "https://transparencia.reginopolis.sp.gov.br:8080/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -24,6 +25,7 @@
         "libs/pdf-lib.min.js",
         "tesouraria.js",
         "contabilidade.js",
+        "empenho-consulta.js",
         "content.js"
       ],
       "run_at": "document_idle"
