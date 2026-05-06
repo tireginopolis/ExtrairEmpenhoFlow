@@ -33,6 +33,7 @@ class EmpenhoConsulta {
     static BASE_URL = "https://transparencia.reginopolis.sp.gov.br:8080/transparencia/VersaoJson/Despesas/";
     static STORAGE_KEY = "contabilidade_ativo";
     static WRAPPER_ID = "empenho-header-wrapper";
+    static ANO = "2026";
 
     //static TIPOS_EMPENHO = ["AD", "AN", "DA", "ES", "EX", "GL", "OR"];
     static TIPOS_EMPENHO = ["AD", "AN", "DA", "EX", "GL", "OR"];
@@ -285,6 +286,7 @@ class EmpenhoConsulta {
 
     _consultarViaBackground(numero, tipo) {
         const params = new URLSearchParams({
+            ConectarExercicio: EmpenhoConsulta.ANO,
             Listagem: "DetalhesEmpenhoPorNumeroEmpenho",
             intNumeroEmpenho: numero,
             strTipoEmpenho: tipo,
