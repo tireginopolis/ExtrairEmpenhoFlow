@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Empenho PDF Automação Flowdocs",
-  "version": "2.1",
+  "version": "2.2",
   "description": "Módulos Tesouraria, Contabilidade e Consulta de Empenho — automação de processos no Flowdocs",
   "permissions": [
     "scripting",

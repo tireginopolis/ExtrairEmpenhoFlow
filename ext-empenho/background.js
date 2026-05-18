@@ -46,7 +46,6 @@ async function setModuloAtivo(storageKey, valor) {
 // ──────────────────────────────────────────────────────────────
 async function criarMenus() {
     chrome.contextMenus.removeAll(async () => {
-        // Separador visual de título (não clicável)
         chrome.contextMenus.create({
             id:       "header-modulos",
             title:    "── Módulos ──",
@@ -99,32 +98,89 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
 });
 
 // ──────────────────────────────────────────────────────────────
-//  Injeção do interceptor.js (mundo MAIN) — só se algum módulo ativo
+//  Injeção dos scripts quando a aba chega via redirect externo
+//
+//  PROBLEMA: o app desktop abre /credentials/login?...&continueTo=
+//  /admin/inbox/folder/... O evento "loading" captura a URL ainda
+//  como /credentials/login, que não bate com TARGET_URL, então
+//  nem o interceptor nem os content scripts são injetados.
+//
+//  SOLUÇÃO: escutar "complete" (URL final já resolvida) e injetar
+//  tanto o interceptor quanto os content scripts manualmente se
+//  eles ainda não estiverem presentes na aba.
 // ──────────────────────────────────────────────────────────────
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-    if (
-        changeInfo.status !== "loading" ||
-        !tab.url?.includes(TARGET_URL)
-    ) return;
 
-    // Injeta se qualquer módulo estiver ativo
-    const estados = await Promise.all(
-        MODULOS.map((m) => getModuloAtivo(m.storageKey))
-    );
+// Abas onde os content scripts já foram injetados nesta sessão
+const _scriptsInjetados = new Set();
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    // "loading" limpa o flag — nova navegação na mesma aba
+    if (changeInfo.status === "loading") {
+        _scriptsInjetados.delete(tabId);
+        return;
+    }
+
+    // Só age quando a página terminou de carregar
+    if (changeInfo.status !== "complete") return;
+
+    // Verifica se a URL final é a alvo
+    const url = tab.url ?? "";
+    if (!url.includes(TARGET_URL)) return;
+
+    // ── Injeção do interceptor.js (mundo MAIN) ────────────────
+    const estados    = await Promise.all(MODULOS.map((m) => getModuloAtivo(m.storageKey)));
     const algumAtivo = estados.some(Boolean);
-    if (!algumAtivo) return;
+
+    if (algumAtivo) {
+        try {
+            await chrome.scripting.executeScript({
+                target: { tabId },
+                files:  ["interceptor.js"],
+                world:  "MAIN",
+            });
+        } catch (err) {
+            console.error("[Background] Erro ao injetar interceptor:", err);
+        }
+    }
+
+    // ── Injeção dos content scripts (mundo ISOLATED) ──────────
+    // Necessário quando a aba chega via redirect externo, pois
+    // o manifest só injeta em navegações diretas para a URL alvo.
+    if (_scriptsInjetados.has(tabId)) return;
+    _scriptsInjetados.add(tabId);
 
     try {
-        await chrome.scripting.executeScript({
-            target: { tabId },
-            files: ["interceptor.js"],
-            world: "MAIN",
-        });
-    } catch (err) {
-        console.error("[Background] Erro ao injetar interceptor:", err);
+        // Testa se o content script já está ativo pedindo um ping
+        await chrome.tabs.sendMessage(tabId, { type: "PING" });
+        // Se chegou aqui, já está rodando — não injeta de novo
+    } catch (_) {
+        // Não respondeu: injeta os scripts na mesma ordem do manifest
+        try {
+            await chrome.scripting.executeScript({
+                target: { tabId },
+                files: [
+                    "libs/pdf.min.js",
+                    "libs/pdf-lib.min.js",
+                    "tesouraria.js",
+                    "contabilidade.js",
+                    "empenho-consulta.js",
+                    "content.js",
+                ],
+            });
+            console.debug(`[Background] Content scripts injetados na aba ${tabId} (via redirect).`);
+        } catch (err) {
+            console.error("[Background] Erro ao injetar content scripts:", err);
+        }
     }
 });
 
+chrome.tabs.onRemoved.addListener((tabId) => {
+    _scriptsInjetados.delete(tabId);
+});
+
+// ──────────────────────────────────────────────────────────────
+//  Proxy de fetch para contornar CORS (usado pelo EmpenhoConsulta)
+// ──────────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === "EMPENHO_FETCH") {
         fetch(msg.url)
@@ -134,7 +190,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             })
             .then((data) => sendResponse({ ok: true,  data }))
             .catch((err) => sendResponse({ ok: false, error: err.message }));
- 
+
         return true; // mantém o canal aberto para resposta assíncrona
     }
 });
